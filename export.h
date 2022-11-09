@@ -1,7 +1,6 @@
 #ifndef TFTPMANAGER_H
 #define TFTPMANAGER_H
 
-typedef int SOCKET;
 #define SOCKET_ERROR (-1)
 #define SOCKET_RECV_ERROR (-2)
 #define OPENFILE_ERROR (-4)
@@ -14,6 +13,7 @@ typedef int SOCKET;
 
 #ifdef __APPLE__
 #define EXPORT_HD extern "C" __attribute__((visibility("default"))) __attribute__((used))
+typedef int SOCKET;
 #elif _WIN32
 #define EXPORT_HD extern "C" __declspec(dllexport)
 // remove annoying windows w_char
@@ -33,4 +33,11 @@ EXPORT_HD int tf_write(const char *filename, char mode, callback_fn_t *callback_
 
 EXPORT_HD int tf_init(const char *host, int port);
 
+
+#define socket_assert(x) \
+if(((int)(x)) < 0){  \
+    logger.WriteError(msg<<":"<<__FILE__<<":"<<__FUNCTION__<<":"<<__LINE__<<":"); \
+    perror("socket_assert");    \
+    return SOCKET_ERROR;   \
+}
 #endif

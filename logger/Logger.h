@@ -2,15 +2,7 @@
 #define LOGGER_H
 
 #include <fstream>
-
-
-/*Macro definition for logging*/
-#define ASSERT(fun)\
-if(!(fun)){        \
-    logger.WriteError(msg<<":"<<__FILE__<<":"<<__FUNCTION__<<":"<<__LINE__<<":"); \
-    perror("");    \
-    assert(fun);   \
-}
+#include <iostream>
 
 /*Types of message to be written in log*/
 #define INFO   "DEBUG "
@@ -31,7 +23,7 @@ public:
 
 private:
     static char *GetTimeStamp();    //to get the timestamp of current execution
-    std::ofstream m_Stream;            //File stream will be used to write the log information
+    std::ofstream stream;            //File stream will be used to write the log information
     Logger();                                //private constructor
 
 
@@ -43,7 +35,8 @@ private:
 
     template<class T>
     void log(const char *label, const T &s) {
-        m_Stream << GetSeqNo() << ". [" << label << GetTimeStamp() << "]: " << s << std::endl;
+        stream << GetSeqNo() << ". [" << label << GetTimeStamp() << "]: " << s << std::endl;
+        std::cout << s << std::endl;
     }
 };
 

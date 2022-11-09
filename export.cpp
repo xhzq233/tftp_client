@@ -1,11 +1,19 @@
+
+#ifdef __APPLE__
+
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/socket.h>
+
+#elif _WIN32
+#include <Windows.h>
+#include <winsock.h>
+#endif
+
 #include "export.h"
 #include "logger/Logger.h"
 #include <cstdlib>
 #include <cstdio>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
 #include "pkt/Packet.h"
 #include <sys/stat.h>
 
@@ -13,19 +21,22 @@
 SOCKET socket_fd{};
 // 本地recv的地址
 sockaddr_in listen_addr{};
-// 将要连接的服务器的地址
+// 建立连接的外部地址
+sockaddr_in conn_addr{};
+socklen_t conn_addr_l = sizeof(sockaddr_in);
+// 信任地址 target
 sockaddr_in server_addr{};
-socklen_t server_addr_l = sizeof(server_addr);
 
 std::stringstream msg;
 
 #define  ZeroMemory(a) memset((&a), 0, sizeof((a)))
 
 #define sendto_server(pkt) \
-sendto(socket_fd, pkt.data, pkt.len, 0, (struct sockaddr *) &server_addr, sizeof(server_addr))
+sendto(socket_fd, pkt.data, pkt.len, 0, (struct sockaddr *) &conn_addr, conn_addr_l)
 
 #define recvfrom_out(buf) \
-recvfrom(socket_fd, (buf), TFTP_PACKET_MAX_SIZE, 0, (struct sockaddr *) &server_addr, &server_addr_l)
+recvfrom(socket_fd, (buf), TFTP_PACKET_MAX_SIZE, 0, (struct sockaddr *) &conn_addr, &conn_addr_l)
+
 
 #define check_error \
 if (IsError(recv_buf)) {\
@@ -34,6 +45,12 @@ if (IsError(recv_buf)) {\
     fclose(file);   \
     callback_fn({.type=TF_TRANS_ERR, .value=TF_UNKNOWN_BLOCK_NO});\
     return SOCKET_RECV_ERROR;\
+}
+
+#define check_origin \
+if (memcmp(&conn_addr,&server_addr,sizeof(sockaddr_in))!=0) { \
+    msg << "recv from "<< addrtos(conn_addr) <<" which is not same with target server, ignored";\
+    logger.WriteError(msg);\
 }
 
 #define recv_check \
@@ -46,27 +63,26 @@ while (recv_size == -1 || !IsACK(recv_buf, block_no)) {\
     recv_size = recvfrom_out(recv_buf);\
 }
 
-
-#define socket_assert(x) \
-if((x)== SOCKET_ERROR){  \
-    logger.WriteError(msg<<":"<<__FILE__<<":"<<__FUNCTION__<<":"<<__LINE__<<":"); \
-    perror("socket_assert");    \
-    return SOCKET_ERROR;   \
-}
-
 long get_file_size(const char *filename) {
     struct stat stat_buf{};
     int rc = stat(filename, &stat_buf);
     return rc == 0 ? stat_buf.st_size : -1;
 }
 
+const char *addrtos(sockaddr_in addr) {
+    static char buf[1000];
+    sprintf(buf, "host %s, port %d", inet_ntoa(addr.sin_addr), htons(addr.sin_port));
+    return buf;
+}
+
 int tf_init(const char *host, int port) {
 
     //服务器地址
-    bzero(&server_addr, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(host);
-    server_addr.sin_port = htons(port);
+    ZeroMemory(conn_addr);
+    conn_addr.sin_family = AF_INET;
+    conn_addr.sin_addr.s_addr = inet_addr(host);
+    conn_addr.sin_port = htons(port);
+    memcpy(&server_addr, &conn_addr, conn_addr_l);
 
     socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     socket_assert(socket_fd)
@@ -80,14 +96,16 @@ int tf_init(const char *host, int port) {
     socket_assert(s)
 
     // listen address
-    bzero(&listen_addr, sizeof(listen_addr));
+    ZeroMemory(listen_addr);
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     listen_addr.sin_port = htons(0); // any port
 
-    auto bound = bind(socket_fd, (struct sockaddr *) &listen_addr, sizeof(listen_addr));
-    socket_assert(bound)
+    s = bind(socket_fd, (struct sockaddr *) &listen_addr, sizeof(listen_addr));
+    socket_assert(s)
 
+    printf("bound server %s\n", addrtos(conn_addr));
+    printf("listening at %s\n", addrtos(listen_addr));
     return FIN;
 }
 
@@ -98,6 +116,7 @@ int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
     ssize_t recv_size;
     size_t recv_data_len;
     FILE *file = nullptr;
+    short block_no = 1;
 
     if (mode == TMOctet) {
         logger.WriteLog(msg << "open " << filename << " for OCTET tf_read");
@@ -106,7 +125,6 @@ int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
         logger.WriteLog(msg << "open " << filename << " for ASCII tf_read");
         file = fopen(filename, "w");
     }
-
     if (!file) {
         logger.WriteError(msg << "open " << filename << " failed");
         return OPENFILE_ERROR;
@@ -114,12 +132,41 @@ int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
 
     //request
     sendto_server(packet);
+    recv_size = recvfrom_out(recv_buf);
+
+    // if recv error or recv unexpected pkt (is not data & block_no)
+    // error handling
+    while (recv_size == -1 || !IsData(recv_buf, block_no)) {
+        check_error
+        callback_fn({.type=TF_TRANS_ERR, .value=block_no});
+        msg << "recv wrong data pkt, start to resend";
+        logger.WriteError(msg);
+        sendto_server(packet);
+        recv_size = recvfrom_out(recv_buf);
+    }
+
+    // Connection established successfully
 
     // start data transfer
-    short block_no = 1;
-    while (true) {
-        recv_size = recvfrom_out(recv_buf);
 
+    while (true) {
+        //received data
+        auto data = TftpData(recv_buf);
+        recv_data_len = recv_size - 4;// head 4 bytes
+        fwrite(data, 1, recv_data_len, file);
+
+        packet = Packet::CreateAck(block_no);
+        sendto_server(packet);
+
+        /*if last data packet then close*/
+        if (recv_data_len < 512) {
+            fclose(file);
+            break;
+        }
+        block_no++;//next block
+
+        recv_size = recvfrom_out(recv_buf);
+        check_origin
         // if recv error or recv unexpected pkt (is not data & block_no)
         // error handling
         while (recv_size == -1 || !IsData(recv_buf, block_no)) {
@@ -136,21 +183,6 @@ int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
         } else {
             callback_fn({.type=TF_PROGRESS, .value=block_no});
         }
-
-        //received data
-        auto data = TftpData(recv_buf);
-        recv_data_len = recv_size - 4;// head 4 bytes
-        fwrite(data, 1, recv_data_len, file);
-
-        packet = Packet::CreateAck(block_no);
-        sendto_server(packet);
-
-        /*if last data packet then close*/
-        if (recv_data_len < 512) {
-            fclose(file);
-            break;
-        }
-        block_no++;//next block
     }
     callback_fn({.type=TF_END, .value=block_no});
     return FIN;

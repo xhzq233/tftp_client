@@ -5,8 +5,6 @@
 
 /*Macros for TFTP opcodes ,error,maximum size of packet and data. */
 enum {
-    TMRead,
-    TMWrite,
     TMOctet,
     TMAscii
 };

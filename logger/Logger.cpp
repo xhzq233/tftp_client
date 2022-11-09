@@ -10,11 +10,11 @@ Logger::Logger() {
     time_t t = time(nullptr);
     struct tm *today = localtime(&t);
     strftime(file, 30, "%d-%m-%Y_%H-%M-%S.log", today);
-    m_Stream.open(file, std::fstream::app);
+    stream.open(file, std::fstream::app);
 }
 
 Logger::~Logger() {
-    m_Stream.close();
+    stream.close();
 }
 
 
