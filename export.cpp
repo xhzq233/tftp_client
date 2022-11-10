@@ -99,7 +99,7 @@ int tf_init(const char *host, int port) {
     ZeroMemory(listen_addr);
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    listen_addr.sin_port = htons(0); // any port
+    listen_addr.sin_port = htons(23333); // any port
 
     s = bind(socket_fd, (struct sockaddr *) &listen_addr, sizeof(listen_addr));
     socket_assert(s)

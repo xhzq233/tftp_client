@@ -26,8 +26,6 @@ const char *TftpData(const char *packet);
 
 //maximum size of packets
 #define TFTP_PACKET_MAX_SIZE 1024
-//Maximum Size of file name
-#define FILE_NAME_MAX_SIZE 1010
 
 
 /*A class for framing and deframing of TFTP packets wich uses the interface class "Ipacket".
