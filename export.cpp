@@ -4,15 +4,18 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <cstdlib>
 
 #elif _WIN32
-#include <Windows.h>
-#include <winsock.h>
+#include <WS2tcpip.h>
+#include <windows.h>
+#define _CRT_SECURE_NO_WARNINGS
+#define ssize_t long
+#pragma comment(lib,"ws2_32.lib")
 #endif
 
 #include "export.h"
 #include "logger/Logger.h"
-#include <cstdlib>
 #include <cstdio>
 #include "pkt/Packet.h"
 #include <sys/stat.h>
@@ -29,6 +32,7 @@ sockaddr_in server_addr{};
 
 std::stringstream msg;
 
+#undef ZeroMemory
 #define  ZeroMemory(a) memset((&a), 0, sizeof((a)))
 
 #define sendto_server(pkt) \

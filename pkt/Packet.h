@@ -2,7 +2,7 @@
 #define TFTPPACKET_H
 
 #include <sstream>
-
+#include <cstring>
 /*Macros for TFTP opcodes ,error,maximum size of packet and data. */
 enum {
     TMOctet,
