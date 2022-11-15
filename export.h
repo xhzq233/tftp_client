@@ -4,6 +4,7 @@
 #define SOCKET_ERROR (-1)
 #define SOCKET_RECV_ERROR (-2)
 #define OPENFILE_ERROR (-4)
+#define RETRY_MAX_ERROR (-8)
 #define FIN (0)
 #define TF_START (1)
 #define TF_PROGRESS (2)
@@ -35,8 +36,9 @@ EXPORT_HD int tf_init(const char *host, int port);
 
 
 #define socket_assert(x) \
-if(((int)(x)) < 0){  \
-    logger.WriteError(msg<<":"<<__FILE__<<":"<<__FUNCTION__<<":"<<__LINE__<<":"); \
+if(((int)(x)) < 0){      \
+    msg<<":"<<__FILE__<<":"<<__FUNCTION__<<":"<<__LINE__<<":";                     \
+    logger.WriteError(msg); \
     perror("socket_assert");    \
     return SOCKET_ERROR;   \
 }

@@ -47,7 +47,7 @@ Packet &Packet::CreateWrq(const char *filename, char mode) {
     return res;
 }
 
-Packet &Packet::CreateData(short block_no, const char *payload, size_t len) {
+Packet &Packet::CreateData(unsigned short block_no, const char *payload, size_t len) {
     static char data[TFTP_PACKET_MAX_SIZE] = {0, 3};
     static Packet res(data);
     res.len = 4;//op 2 bytes and block_no 2 bytes
@@ -66,7 +66,7 @@ Packet &Packet::CreateData(short block_no, const char *payload, size_t len) {
 }
 
 
-Packet &Packet::CreateAck(short block_no) {
+Packet &Packet::CreateAck(unsigned short block_no) {
     static char data[TFTP_PACKET_MAX_SIZE] = {0, 4};
     static Packet res(data);
     res.len = 4;

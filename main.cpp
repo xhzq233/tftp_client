@@ -4,9 +4,8 @@
 #include <sys/stat.h>
 #include "pkt/Packet.h"
 
-
 char host[50] = "";
-char filename[1000] = "1.txt";
+char filename[1000] = "";
 int port = 69;
 char mode = TMOctet;
 
@@ -16,92 +15,99 @@ long gfs() {
     return rc == 0 ? stat_buf.st_size : -1;
 }
 
-std::stringstream log_stream;
+std::ostringstream log_stream;
 
 long total_block = TF_UNKNOWN_BLOCK_NO;
 
 void callback(callback_data data) {
     if (data.type == TF_START) {
-        logger.WriteLog(log_stream << "Start transfer, total block:" << data.value);
+        log_stream << "Start transfer, total block=" << data.value;
+        logger.WriteLog(log_stream);
         total_block = data.value;
     } else if (data.type == TF_PROGRESS) {
         if (total_block != TF_UNKNOWN_BLOCK_NO) {
-            log_stream << "Writing, now progress:" << (double) data.value / (double) total_block;
+            log_stream << "Writing, now progress=" << (double) data.value / (double) total_block << ", blockno="
+                       << data.value;
         } else {
-            log_stream << "Reading, now block number:" << data.value;
+            log_stream << "Reading, now blockno=" << data.value;
         }
         logger.WriteLog(log_stream);
     } else if (data.type == TF_END) {
-        logger.WriteLog(log_stream << "Transferred, total block:" << data.value);
+        log_stream << "Transferred, total block=" << data.value;
+        logger.WriteLog(log_stream);
     } else if (data.type == TF_TRANS_ERR) {
-        logger.WriteLog(log_stream << "Transfer error, now block number:" << data.value);
+//        log_stream << "Error, now blockno=" << data.value;
+//        logger.WriteError(log_stream);
     }
 }
 
-int main() {
+int main(int argc, char **argv) {
     using namespace std::chrono;
     long fsize;
     duration<double, std::milli> c{};
     high_resolution_clock::time_point stime;
     high_resolution_clock::time_point etime;
-    int type;
-    char mode_temp[200];
-    while (true) {
-        printf("1. init with host name and port\n"
-               "2. read from host with filename provided\n"
-               "3. write to host with filename provided\n>>: ");
-        scanf("%d", &type);
-        switch (type) {
-            case 1:
-                printf("input host and port, split with Space\n>>: ");
-                scanf("%s %d", host, &port);
-                if (port > 65535 || port < 0) {
-                    printf("unexpected dst port");
-                    exit(-1);
-                }
-                if (tf_init(host, port) == -1) perror("init error");
-                break;
-            case 2:
-                printf("input filename and mode, split with Space\n>>: ");
-                scanf("%s %s", filename, mode_temp);
-                if (strcmp(mode_temp, "ascii") == 0) {
-                    mode = TMAscii;
-                } else if (strcmp(mode_temp, "octet") == 0) {
-                    mode = TMOctet;
-                } else {
-                    printf("unexpected trans mode");
-                    exit(-1);
-                }
 
-                stime = high_resolution_clock::now();
-                tf_read(filename, mode, callback);
-                etime = high_resolution_clock::now();
-                //end
-                fsize = gfs();
-                c = (etime - stime);
-                printf("%lf Kb/s\n", ((double) fsize * 1000 / 1024) * 8 / c.count());
-                break;
-            case 3:
-                printf("input filename and mode, split with Space\n>>: ");
-                scanf("%s %s", filename, mode_temp);
-                if (strcmp(mode_temp, "ascii") == 0) {
-                    mode = TMAscii;
-                } else if (strcmp(mode_temp, "octet") == 0) {
-                    mode = TMOctet;
-                } else {
-                    printf("unexpected trans mode");
-                    exit(-1);
-                }
-                stime = high_resolution_clock::now();
-                tf_write(filename, mode, callback);
-                etime = high_resolution_clock::now();
-                //end
-                fsize = gfs();
-                c = (etime - stime);
-                printf("%lf Kb/s\n", ((double) fsize * 1000 / 1024) * 8 / c.count());
-                break;
-            default:
-                return 1;
+#define usage puts("\n*usage: ./tftp_client <host> [port=69] <filename> [mode=read] [proto=octet]\n");
+    if (argc <= 2) {
+        usage
+        exit(-1);
+    }
+    strcpy(host, argv[1]);
+    if (argc >= 4) {
+        port = atoi(argv[2]);
+        if (port > 65535 || port < 0) {
+            printf("unexpected dst port");
+            usage
+            exit(-1);
+        }
+        strcpy(filename, argv[3]);
+    } else if (argc == 3) {
+        strcpy(filename, argv[2]);
+    }
+
+    bool read = true;
+    if (argc >= 5) {
+        if (strcmp(argv[4], "read") == 0) {
+
+        } else if (strcmp(argv[4], "write") == 0) {
+            read = false;
+        } else {
+            printf("unexpected r/w mode");
+            usage
+            exit(-1);
         }
     }
+
+    if (argc == 6) {
+        if (strcmp(argv[5], "octet") == 0) {
+
+        } else if (strcmp(argv[5], "ascii") == 0) {
+            mode = TMAscii;
+        } else {
+            printf("unexpected proto(octet/ascii)");
+            usage
+            exit(-1);
+        }
+    }
+
+    if (tf_init(host, port) == -1) {
+        perror("init error");
+        usage
+        return -1;
+    }
+
+    stime = high_resolution_clock::now();
+    int res;
+    if (read) {
+        res = tf_read(filename, mode, callback);
+    } else {
+        res = tf_write(filename, mode, callback);
+    }
+    if (res != FIN) exit(-1);
+    etime = high_resolution_clock::now();
+    //end
+    fsize = gfs();
+    c = (etime - stime);
+    printf("%.3lf Kb/s\n", ((double) fsize * 1000 / 1024) * 8 / c.count());
 }

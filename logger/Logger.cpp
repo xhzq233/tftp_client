@@ -17,16 +17,10 @@ Logger::~Logger() {
     stream.close();
 }
 
-
 int Logger::GetSeqNo() {
     static int m_seq = 0;                //sequence of the log information
     m_seq += 1;
     return m_seq;
-}
-
-void
-Logger::WriteLog(const std::string &ss) {
-    log(INFO, ss);
 }
 
 void Logger::WriteError(const std::string &ss) {
@@ -42,10 +36,14 @@ char *Logger::GetTimeStamp() {
     return tString;
 }
 
-void Logger::WriteError(const std::ostream &ss) {
-    log(ERR, ss.rdbuf());
+void Logger::WriteError(std::ostringstream &ss) {
+    auto s = ss.str();
+    log(ERR, s);
+    ss.str("");
 }
 
-void Logger::WriteLog(const std::ostream &ss) {
-    log(INFO, ss.rdbuf());
+void Logger::WriteLog(std::ostringstream &ss) {
+    auto s = ss.str();
+    log(INFO, s);
+    ss.str("");
 }

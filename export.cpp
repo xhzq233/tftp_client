@@ -23,14 +23,14 @@
 // to create TCP/UDP socket for client
 SOCKET socket_fd{};
 // 本地recv的地址
-sockaddr_in listen_addr{};
+//sockaddr_in listen_addr{};
 // 建立连接的外部地址
 sockaddr_in conn_addr{};
 socklen_t conn_addr_l = sizeof(sockaddr_in);
 // 信任地址 target
 sockaddr_in server_addr{};
 
-std::stringstream msg;
+std::ostringstream msg;
 
 #undef ZeroMemory
 #define  ZeroMemory(a) memset((&a), 0, sizeof((a)))
@@ -47,7 +47,8 @@ if (IsError(recv_buf)) {\
     msg << "recv error, terminating.. Message: " << ErrorMessage(recv_buf);\
     logger.WriteError(msg);\
     fclose(file);   \
-    callback_fn({.type=TF_TRANS_ERR, .value=TF_UNKNOWN_BLOCK_NO});\
+    callback_fn({.type=TF_TRANS_ERR, .value=TF_UNKNOWN_BLOCK_NO});         \
+    close(socket_fd);                \
     return SOCKET_RECV_ERROR;\
 }
 
@@ -57,12 +58,34 @@ if (memcmp(&conn_addr,&server_addr,sizeof(sockaddr_in))!=0) { \
     logger.WriteError(msg);\
 }
 
-#define recv_check \
-while (recv_size == -1 || !IsACK(recv_buf, block_no)) {\
-    check_error    \
+#define recv_ack_check \
+while (recv_size == -1 || !IsACK(recv_buf, block_no)) { \
+    max_retry_check               \
+    if (recv_size==-1) {                \
+        msg << "recv ack timeout, now blockno=" << block_no << " resending";   \
+    }  else {      \
+        check_error\
+        msg << "recv wrong ack, now blockno=" << block_no << " resending";      \
+    }             \
     callback_fn({.type=TF_TRANS_ERR, .value=block_no}); \
-    msg << "recv wrong ack pkt, start to resend";\
+    logger.WriteError(msg);                             \
+    retry_times++;               \
+    sendto_server(packet);\
+    recv_size = recvfrom_out(recv_buf);\
+}
+
+#define recv_data_check \
+while (recv_size == -1 || !IsData(recv_buf, block_no)) { \
+    max_retry_check\
+    if (recv_size == -1) {\
+        msg << "recv data timeout, now blockno=" << block_no << " resending";\
+    } else {\
+        check_error\
+        msg << "recv wrong data, now blockno=" << block_no << " resending";\
+    }\
+    callback_fn({.type=TF_TRANS_ERR, .value=block_no});\
     logger.WriteError(msg);\
+    retry_times++;\
     sendto_server(packet);\
     recv_size = recvfrom_out(recv_buf);\
 }
@@ -100,19 +123,28 @@ int tf_init(const char *host, int port) {
     socket_assert(s)
 
     // listen address
-    ZeroMemory(listen_addr);
-    listen_addr.sin_family = AF_INET;
-    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    listen_addr.sin_port = htons(23333); // any port
+//    ZeroMemory(listen_addr);
+//    listen_addr.sin_family = AF_INET;
+//    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+//    listen_addr.sin_port = htons(23333); // any port
 
-    s = bind(socket_fd, (struct sockaddr *) &listen_addr, sizeof(listen_addr));
-    socket_assert(s)
+//    s = bind(socket_fd, (struct sockaddr *) &listen_addr, sizeof(listen_addr));
+//    socket_assert(s)
 
-    printf("bound server %s\n", addrtos(conn_addr));
-    printf("listening at %s\n", addrtos(listen_addr));
+//    printf("bound server %s\n", addrtos(conn_addr));
+//    printf("listening at %s\n", addrtos(listen_addr));
     return FIN;
 }
 
+#define MAX_RETRY 6
+
+#define max_retry_check \
+if (retry_times >= MAX_RETRY) {\
+    msg << "reached max retry times, Terminating...";\
+    logger.WriteError(msg);\
+    callback_fn({.type=TF_TRANS_ERR, .value=block_no});\
+    return RETRY_MAX_ERROR;\
+}
 
 int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
     Packet &packet = Packet::CreateRrq(filename, mode);
@@ -120,37 +152,33 @@ int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
     ssize_t recv_size;
     size_t recv_data_len;
     FILE *file = nullptr;
-    short block_no = 1;
+    unsigned short block_no = 1;
+    char retry_times;
 
     if (mode == TMOctet) {
-        logger.WriteLog(msg << "open " << filename << " for OCTET tf_read");
+        msg << "open " << filename << " for OCTET read";
         file = fopen(filename, "wb");
     } else if (mode == TMAscii) {
-        logger.WriteLog(msg << "open " << filename << " for ASCII tf_read");
+        msg << "open " << filename << " for ASCII read";
         file = fopen(filename, "w");
     }
+    logger.WriteLog(msg);
     if (!file) {
-        logger.WriteError(msg << "open " << filename << " failed");
+        msg << "open " << filename << " failed";
+        logger.WriteError(msg);
         return OPENFILE_ERROR;
     }
 
     //request
     sendto_server(packet);
+    retry_times = 0;
     recv_size = recvfrom_out(recv_buf);
-
     // if recv error or recv unexpected pkt (is not data & block_no)
     // error handling
-    while (recv_size == -1 || !IsData(recv_buf, block_no)) {
-        check_error
-        callback_fn({.type=TF_TRANS_ERR, .value=block_no});
-        msg << "recv wrong data pkt, start to resend";
-        logger.WriteError(msg);
-        sendto_server(packet);
-        recv_size = recvfrom_out(recv_buf);
-    }
+    recv_data_check
 
     // Connection established successfully
-
+    callback_fn({.type=TF_START, .value=TF_UNKNOWN_BLOCK_NO});
     // start data transfer
 
     while (true) {
@@ -161,32 +189,20 @@ int tf_read(const char *filename, char mode, callback_fn_t *callback_fn) {
 
         packet = Packet::CreateAck(block_no);
         sendto_server(packet);
-
+        retry_times = 0;
         /*if last data packet then close*/
         if (recv_data_len < 512) {
             fclose(file);
             break;
         }
         block_no++;//next block
-
         recv_size = recvfrom_out(recv_buf);
-        check_origin
+
         // if recv error or recv unexpected pkt (is not data & block_no)
         // error handling
-        while (recv_size == -1 || !IsData(recv_buf, block_no)) {
-            check_error
-            callback_fn({.type=TF_TRANS_ERR, .value=block_no});
-            msg << "recv wrong data pkt, start to resend";
-            logger.WriteError(msg);
-            sendto_server(packet);
-            recv_size = recvfrom_out(recv_buf);
-        }
+        recv_data_check
 
-        if (block_no == 1) {
-            callback_fn({.type=TF_START, .value=TF_UNKNOWN_BLOCK_NO});//-1 as TF_UNKNOWN_BLOCK_NO
-        } else {
-            callback_fn({.type=TF_PROGRESS, .value=block_no});
-        }
+        callback_fn({.type=TF_PROGRESS, .value=block_no});
     }
     callback_fn({.type=TF_END, .value=block_no});
     return FIN;
@@ -197,19 +213,22 @@ int tf_write(const char *filename, char mode, callback_fn_t *callback_fn) {
     Packet &packet = Packet::CreateWrq(filename, mode);
     char recv_buf[TFTP_PACKET_MAX_SIZE];
     ZeroMemory(recv_buf);
-    short block_no = 0;
+    unsigned short block_no = 0;
     ssize_t recv_size;
     FILE *file = nullptr;
+    char retry_times;
 
     if (mode == TMOctet) {
-        logger.WriteLog(msg << "open " << filename << " for OCTET write");
+        (msg << "open " << filename << " for OCTET write");
         file = fopen(filename, "rb");
     } else if (mode == TMAscii) {
-        logger.WriteLog(msg << "open " << filename << " for ASCII write");
+        msg << "open " << filename << " for ASCII write";
         file = fopen(filename, "r");
     }
+    logger.WriteLog(msg);
     if (!file) {
-        logger.WriteError(msg << "open " << filename << " failed");
+        msg << "open " << filename << " failed";
+        logger.WriteError(msg);
         return OPENFILE_ERROR;
     }
 
@@ -219,9 +238,10 @@ int tf_write(const char *filename, char mode, callback_fn_t *callback_fn) {
     auto total_block_no = (file_size % 512 <= 0) ? file_size / 512 : (file_size / 512) + 1;
 
     sendto_server(packet);
+    retry_times = 0;
     recv_size = recvfrom_out(recv_buf);
     // if recv error or recv unexpected pkt (is not ack 0)
-    recv_check
+    recv_ack_check
     callback_fn({.type=TF_START, .value=total_block_no});
 
     // start data transfer
@@ -235,14 +255,17 @@ int tf_write(const char *filename, char mode, callback_fn_t *callback_fn) {
         packet = Packet::CreateData(block_no, send_buf, read_size);
 
         sendto_server(packet);
+        retry_times = 0;
+
         recv_size = recvfrom_out(recv_buf);
-        recv_check
+        recv_ack_check
 
         // notify listeners that there is a packet transferred
         callback_fn({.type=TF_PROGRESS, .value=block_no});
 
         if (read_size < 512) {
             fclose(file);
+            close(socket_fd);
             break;
         }
         block_no++;//next block

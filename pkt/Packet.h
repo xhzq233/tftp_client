@@ -60,7 +60,7 @@ public:
       ----------------------------------
       | Opcode |   Block #  |   Data
       ----------------------------------	*/
-    static Packet &CreateData(short block_no, const char *payload, size_t len);
+    static Packet &CreateData(unsigned short block_no, const char *payload, size_t len);
 
     /*For creating the aknowledgement responce packet
 
@@ -68,7 +68,7 @@ public:
      ---------------------
      | Opcode |   Block #  |
      ---------------------*/
-    static Packet &CreateAck(short block_no);
+    static Packet &CreateAck(unsigned short block_no);
 
     /*For creating a error packet.
 
