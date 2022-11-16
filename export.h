@@ -21,6 +21,7 @@ typedef int SOCKET;
 #undef UNICODE
 #else
 #define EXPORT_HD
+typedef int SOCKET;
 #endif // __APPLE__
 
 struct callback_data {
