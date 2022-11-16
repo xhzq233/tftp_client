@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 project(tftp_client VERSION 0.0.1)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 
 # executable setting
 add_executable(
