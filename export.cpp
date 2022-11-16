@@ -1,17 +1,17 @@
-
-#ifdef __APPLE__
+#if _WIN32
+#include <WS2tcpip.h>
+#include <windows.h>
+#define _CRT_SECURE_NO_WARNINGS
+#define ssize_t long
+#pragma comment(lib,"ws2_32.lib")
+#define close closesocket
+#else
 
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <cstdlib>
 
-#elif _WIN32
-#include <WS2tcpip.h>
-#include <windows.h>
-#define _CRT_SECURE_NO_WARNINGS
-#define ssize_t long
-#pragma comment(lib,"ws2_32.lib")
 #endif
 
 #include "export.h"

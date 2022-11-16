@@ -19,6 +19,8 @@ typedef int SOCKET;
 #define EXPORT_HD extern "C" __declspec(dllexport)
 // remove annoying windows w_char
 #undef UNICODE
+#else
+#define EXPORT_HD
 #endif // __APPLE__
 
 struct callback_data {
