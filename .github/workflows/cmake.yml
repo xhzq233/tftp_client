@@ -49,8 +49,8 @@ jobs:
       - uses: ncipollo/release-action@v1
         name: upload
         with:
-          artifacts: "tf_client-0.1.${{ github.run_number }}-${{ matrix.config.arch }}.tar.gz"
+          artifacts: "tf_client-0.0.1-${{ matrix.config.arch }}.tar.gz"
           allowUpdates: true
           replacesArtifacts: false
           commit: master
-          tag: v0.1.${{ github.run_number }}
+          tag: v0.0.1
